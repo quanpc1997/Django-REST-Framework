@@ -85,6 +85,8 @@ class SnippetSerializer(serializers.Serializer):
         instance.save()
         return instance
 ```
+Ở đây chúng ta muốn trả về các phiên bản đối tượng hoàn chỉnh dựa tren dữ liệu đã được xác thực, nên chúng ta cần override 2 phương thức là .create() và .update(). Ở đây 2 phương thức này chỉ là option. 
+Bất kì keyword được thêm vào thì đều phải được bao gồm trong validated_data.
 
 ### 2. Làm việc với Serializers.
 Trước khi chúng ta đi tìm hiểu sâu hơn sẽ làm quen với việc sử dụng Serializers. 
@@ -146,11 +148,17 @@ serializer = SnippetSerializer(Snippet.objects.all(), many=True)
 serializer.data
 # [OrderedDict([('id', 1), ('title', ''), ('code', 'foo = "bar"\n'), ('linenos', False), ('language', 'python'), ('style', 'friendly')]), OrderedDict([('id', 2), ('title', ''), ('code', 'print("hello, world")\n'), ('linenos', False), ('language', 'python'), ('style', 'friendly')]), OrderedDict([('id', 3), ('title', ''), ('code', 'print("hello, world")'), ('linenos', False), ('language', 'python'), ('style', 'friendly')])]
 ```
+Chúng ta cũng có thể thêm/cập nhật một đối tượng mới bằng cách dùng hàm .save().
 
-### 3. Writing regular Django views using our Serializer
+### 3. Validation
+Tobe Continue
+
+### 4. Writing regular Django views using our Serializer
 <a href="https://www.django-rest-framework.org/tutorial/1-serialization/#writing-regular-django-views-using-our-serializer">Xem thêm</a>
 
 <hr />
+
+
 
 ## II. Requests and Responses
 ### 1. Request Objects
@@ -169,10 +177,20 @@ DRF giới thiệu một đối tượng <a style="color:red">Request</a> đư�
 [Xem thêm](https://www.django-rest-framework.org/api-guide/requests/#request-parsing)
 
 ### 2. Response objects
-DRF giới thiệu đối tượng <a style="color:red">Response</a> - là một kiểu của <a style="color:red">TemplateResponse</a>. Nó sẽ xác định và trả về kiểu mà client cần.
+DRF giới thiệu đối tượng Response - là một kiểu của TemplateResponse. Nó sẽ xác định và trả về kiểu mà client cần.
 ```python
 return Response(data)  # Renders to content type as requested by the client.
 ```
+#### Một vài tham số quan trọng
+- **response.data**
+    - Trả về body của response.
+
+- **response.status_code**
+    - Mã phản hồi của response.
+
+- **response.content**
+    - Nội dung được hiển thị của response. Phương thức .render() phải được gọi trước khi có thể truy cập .content.
+
 [Xem thêm](https://www.django-rest-framework.org/api-guide/responses/)
 
 ### 3. Status codes.
@@ -243,8 +261,17 @@ def snippet_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 ```
 
+#### View schema decorator.
+Giống như trong flask thì DRF cũng cung cấp 1 decorator là @schema. Nhận một tham số duy nhất. Ta có thể pass None vào đây. Nhưng chỉ áp dụng cho @api_view
+
 ## III. Class-based Views
-### 1. Viết lại API sử dụng class-based views.
+### 1. APIView.
+REST framework cung cấp một `APIView` class như là một class con của `View` của Django.
+Nó có một vài khác biệt như sau:
+- Sử dụng Request/Response của DRF chứ k phải HttpRequest/HttpResponse của Django
+- Bất kì APIException sẽ được bắt và chuyển thành phản hồi thích hợp.
+- Các request mới đến sẽ được authen và kiểm tra các quyền và điều tiết chúng một cách phù hợp trước khi được xử lý.
+
 Như phần II ta đã viết lại class sử dụng `@api_view`. Nay ta sẽ viết lại với 1 view cơ bản nhất là `APIView`.
 ```python
 from snippets.models import Snippet
@@ -299,5 +326,175 @@ class SnippetDetail(APIView):
         snippet.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 ```
+[Đọc thêm các phương thức và thuộc tính](https://www.django-rest-framework.org/api-guide/views/#api-policy-attributes)
 
-### 3. Sử dụng Mixins
+#### API policy decorators.
+Đọc k hiểu lắm.
+[Xem thêm](https://www.django-rest-framework.org/api-guide/views/#api-policy-decorators)
+
+
+## IV. Generic Views
+DRF cung cấp rất nhiều pre-built views với các tính năng khác nhau để người dùng có thể tái sử dụng.
+Nếu Generic views không phù hợp để sử dụng thì chúng ta lại sử dụng APIView hoặc là sử dụng Mixins và những base class - cái mà tạo ra các Generic Views.
+
+### 1. GenericAPIView
+Class này được kế thừa từ class APIView.
+#### Thuộc tính
+**Thuộc tính cơ bản**
+- `queryset` - Queryset được sử dụng để trả về các object từ view này. Thông thường bạn phải đặt thuộc tính này hoặc là override bằng sử dụng method `get_queryset()`. 
+- `serializer_class` - Serializer class đướcử dụng để validate và deserializing input và serializing cho output. Thông thường, ta phải set thuộc tính này hoặc là override bằng cách sử dụng method `get_serializer_class()`
+- `lookup_field` - model filed này được sử dụng cho việc tra cứu các đối tượng. Mặc định là `pk`. Đây chính là đối tượng sẽ tự động điền vào url và được set trong URL.
+Ví dụ: 
+```python
+path('abc/<int:pk>/', CustomAPIView.as_view(), name='abc'),
+```
+Chú ý ta phải set pk ở cả urls và trong class. 
+
+- `lookup_url_kwarg` - The URL keyword argument that should be used for object lookup. The URL conf should include a keyword argument corresponding to this value. If unset this defaults to using the same value as `lookup_field`.
+
+- `permission_classes` - Sẽ được nói tới trong phần Permissions.
+
+- `renderer_classes` - Sẻ được nói tới trong phần JSONRenderer.
+
+
+**Phân trang**
+Các thuộc tính dưới đây được sử dụng để quản lý phân trang khi ta sử dụng với list views.
+- `pagination_class` - Class này thường được sử dụng để phân trang cho các hàm trả ra list kết quả. Mặc định thì nó có giá trị bằng với `DEFAULT_PAGINATION_CLASS` settings - đó là `rest_framework.pagination.PageNumberPagination`. Setting `pagination_class=None` sẽ bị disable trong view.
+
+**Filtering**
+- `filter_backends` - Một danh sách các filter backend classed được sử dụng cho việc lọc các queryset. Mặc định giá trị của nó bằng giá trị `DEFAULT_FILTER_BACKENDS` trong setting.
+
+
+#### Phương thức.
+**get_queryset(self)**
+Phương thức này đã được nhắc đến ở trên. Phương thức trả về queryset.
+Ví dụ:
+```python
+class CustomAPIView(generics.GenericAPIView):
+    serializer_class = CustomSerializer
+    permission_classes = (AuthenticatedCustomized,)
+    renderer_classes = (CustomRenderer,)
+    
+    def get_queryset(self):
+        market_example_type = MarketExample.objects.all()
+        market_data_example_file = FileUploadExample.objects.filter(type=UploadFileType.CUSTOM).values('id', 'file_name', 'updated_date').order_by('-updated_date').first()
+        school_data_example_file = FileUploadExample.objects.filter(type=UploadFileType.SCHOOL).values('id', 'file_name', 'updated_date').order_by('-updated_date').first()
+        return {
+            'market_type': market_example_type,
+            'market_data_file': market_data_example_file,
+            'school_data_file': school_data_example_file
+        }
+```
+
+**filter_queryset(self, queryset)**
+Trả về queryset sau khi được filter với 1 filter backend.
+Ví dụ:
+```python
+def filter_queryset(self, queryset):
+    filter_backends = [CategoryFilter]
+
+    if 'geo_route' in self.request.query_params:
+        filter_backends = [GeoRouteFilter, CategoryFilter]
+    elif 'geo_point' in self.request.query_params:
+        filter_backends = [GeoPointFilter, CategoryFilter]
+
+    for backend in list(filter_backends):
+        queryset = backend().filter_queryset(self.request, queryset, view=self)
+
+    return queryset
+```
+
+**get_serializer_class(self)**
+Phương thức này đã được nhắc đến ở trên. Phương thức trả về một Serializer.
+Ví dụ:
+```python
+def get_serializer_class(self):
+    if self.request.user.is_staff:
+        return FullAccountSerializer
+    return BasicAccountSerializer
+```
+
+Còn một chút nội dung không được viết vào đây. Xin mời [đọc thêm](https://www.django-rest-framework.org/api-guide/generic-views/)
+
+
+### 2. Mixins
+Đọc là Mix-in. Đây là một thuật ngữ trong Đa kế thừa. Thực chất nó cũng chỉ là những class bình thường và do nó thường được dùng trong đa kế thừa nên người ta sẽ thêm sub-fix mixin đàng sau tên Class. 
+
+Class Mixin được import từ `rest_framework.mixins`.
+
+#### ListModelMixin
+Cung cấp một phương thức `.list(request, *args, **kwargs)` thực hiện liệt kê một queryset.
+Thành công sẽ trả về `200 OK`, cùng với một serialized. Dữ liệu trả về có thể tùy chọn phân trang.
+
+#### CreateModelMixin
+Cung cấp một phương thức `.create(request, *args, **kwargs)` - phương thức này dùng để khởi tạo và lưu một model instance mới.
+Thành công trả về `201 Created` và `400 Bad Request`
+
+#### RetrieveModelMixin
+Cung cấp một phương thức `.retrieve(request, *args, **kwargs)` - phương thức trả về model instance tồn tại trong response.
+Success: `200 OK`
+Failse: `404 Not Found`
+
+#### UpdateModelMixin
+Cung cấp một phương thức `.update(request, *args, **kwargs)` - phương thức giúp update và lưu trữ một model instance đã tồn tại
+Nó cũng cung cấp 1 phương thức `.partial_update(request, *args, **kwargs)` - phương thức này tương tự update bên trên, ngoại trừ việc không bắt buộc phải điền đầy đủ các trường như update(..). Điều này cho phép hỗ trợ các yêu cầu HTTP PATCH
+Success: `200 OK`
+Failse: `400 Bad Request`
+
+#### DestroyModelMixin
+Cung cấp một phương thức `.destroy(request, *args, **kwargs)` - phương thức xóa model instance đang tồn tại.
+Success: `204 No Content`
+Failse: `404 Not Found`
+
+
+### 3. Concrete View Classes
+Những class này có thể được import từ `rest_framework.generics`
+#### CreateAPIView
+Used for create-only endpoints.
+Provides a `post` method handler.
+Extends: GenericAPIView, CreateModelMixin
+
+#### ListAPIView
+Used for read-only endpoints to represent a collection of model instances.
+Provides a `get` method handler.
+Extends: GenericAPIView, ListModelMixin
+
+#### RetrieveAPIView
+Used for **read-only** endpoints to represent a single model instance.
+Provides a `get` method handler.
+Extends: **GenericAPIView**, **RetrieveModelMixin**
+
+#### DestroyAPIView
+Used for **delete-only** endpoints for a single model instance.
+Provides a `delete` method handler.
+Extends: **GenericAPIView**, **DestroyModelMixin**
+
+#### UpdateAPIView
+Used for **update-only** endpoints for a single model instance.
+Provides `put` and `patch` method handlers.
+Extends: **GenericAPIView**, **UpdateModelMixin**
+
+#### ListCreateAPIView
+Used for **read-write** endpoints to represent a collection of model instances.
+Provides `get` and `post` method handlers.
+Extends: **GenericAPIView**, ****ListModelMixin**, **CreateModelMixin**
+
+#### RetrieveUpdateAPIView
+Used for **read or update** endpoints to represent a single model instance.
+Provides `get`, `put` and `patch` method handlers.
+Extends: **GenericAPIView**, **RetrieveModelMixin**, **UpdateModelMixin**
+
+#### RetrieveDestroyAPIView
+Used for **read or delete** endpoints to represent a single model instance.
+Provides `get` and `delete` method handlers.
+Extends: **GenericAPIView**, **RetrieveModelMixin**, **DestroyModelMixin**
+
+#### RetrieveUpdateDestroyAPIView
+Used for **read-write-delete** endpoints to represent a single model instance.
+Provides `get`, `put`, `patch` and `delete` method handlers.
+Extends: **GenericAPIView**, **RetrieveModelMixin**, **UpdateModelMixin**, **DestroyModelMixin**
+
+#### Django Rest Multiple Models
+Django Rest Multiple Models cung cấp một generic view cho việc gửi nhiều serialized models và/hoặc querysets thông qua một API request duy nhất
+Đây là một công cụ dành cho việc serializing data, nhưng thỉnh thoảng bạn cần kết hợp nhiều serializers. 
+[Xem thêm](https://github.com/MattBroach/DjangoRestMultipleModels)
